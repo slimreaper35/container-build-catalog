@@ -872,6 +872,99 @@ spec:
       runAsUser: 0
       runAsNonRoot: false
 
+  - name: sign-image
+    image: quay.io/konflux-ci/konflux-build-cli@sha256:42809082a271a037f0774af81e536d9f7d03cf0236634ff44b1c5f85b7fa2216
+    volumeMounts:
+      - mountPath: /mnt/trusted-ca
+        name: trusted-ca
+        readOnly: true
+      - mountPath: /var/run/sigstore/cosign
+        name: oidc-token
+        readOnly: true
+    securityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+
+      CA_BUNDLE=/mnt/trusted-ca/ca-bundle.crt
+      if [ -f "$CA_BUNDLE" ]; then
+        echo "INFO: Using mounted CA bundle: $CA_BUNDLE"
+        cp -vf $CA_BUNDLE /etc/pki/ca-trust/source/anchors
+        update-ca-trust
+      fi
+
+      konflux-build-cli config keyless-signing > /shared/keyless-signing-result.json
+
+      ENABLED=$(jq -r .enabled /shared/keyless-signing-result.json)
+      if [ "${ENABLED}" != "true" ]; then
+        echo "INFO: Skipping image signing because keyless signing is disabled"
+        exit 0
+      fi
+
+      IMAGE_REF=$(cat "$(results.IMAGE_REF.path)")
+
+      FULCIO_URL=$(jq -r '."fulcio-url"' /shared/keyless-signing-result.json)
+      REKOR_URL=$(jq -r '."rekor-url"' /shared/keyless-signing-result.json)
+      OIDC_ISSUER=$(jq -r '."oidc-issuer"' /shared/keyless-signing-result.json)
+
+      konflux-build-cli image sign \
+        --image="${IMAGE_REF}" \
+        --fulcio-url="${FULCIO_URL}" \
+        --rekor-url="${REKOR_URL}" \
+        --oidc-issuer="${OIDC_ISSUER}" \
+        --oidc-token-path=/var/run/sigstore/cosign/oidc-token
+
+  - name: attest-image
+    image: quay.io/konflux-ci/mobster:2.3.0@sha256:8271460f52c07aa58717362da0a83d5c6c2de3fc0c2071844f93680438d48710
+    workingDir: $(workspaces.source.path)
+    volumeMounts:
+      - mountPath: /mnt/trusted-ca
+        name: trusted-ca
+        readOnly: true
+      - mountPath: /var/run/sigstore/cosign
+        name: oidc-token
+        readOnly: true
+    securityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+    when:
+      - input: $(params.SKIP_SBOM_GENERATION)
+        operator: in
+        values:
+          - "false"
+    script: |
+      #!/bin/bash
+      set -euo pipefail
+
+      CA_BUNDLE=/mnt/trusted-ca/ca-bundle.crt
+      if [ -f "$CA_BUNDLE" ]; then
+        echo "INFO: Using mounted CA bundle: $CA_BUNDLE"
+        cp -vf $CA_BUNDLE /etc/pki/ca-trust/source/anchors
+        update-ca-trust
+      fi
+
+      ENABLED=$(jq -r .enabled /shared/keyless-signing-result.json)
+      if [ "${ENABLED}" != "true" ]; then
+        echo "INFO: Skipping image attestation because keyless signing is disabled"
+        exit 0
+      fi
+
+      IMAGE_REF=$(cat "$(results.IMAGE_REF.path)")
+
+      FULCIO_URL=$(jq -r '."fulcio-url"' /shared/keyless-signing-result.json)
+      REKOR_URL=$(jq -r '."rekor-url"' /shared/keyless-signing-result.json)
+      OIDC_ISSUER=$(jq -r '."oidc-issuer"' /shared/keyless-signing-result.json)
+
+      mobster attest \
+        --image-ref="${IMAGE_REF}" \
+        --sbom-path=sbom.json \
+        --fulcio-url="${FULCIO_URL}" \
+        --rekor-url="${REKOR_URL}" \
+        --oidc-issuer-url="${OIDC_ISSUER}" \
+        --oidc-token-path=/var/run/sigstore/cosign/oidc-token
+
   volumes:
   - name: varlibcontainers
     emptyDir: {}
