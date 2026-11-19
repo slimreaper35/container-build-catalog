@@ -28,6 +28,7 @@ type TestScenarioSpec struct {
 	OverrideMediaType        string                      // Optional: Only for the media type override verification scenarios
 	WorkingDirMount          string                      // Optional: Only for the oci-archive test scenario
 	ConformaPolicyExclusions []string                    // Optional: Only for conforma validations, list of exclusion to be added to the policy during conforma validation
+	KeylessSigning           bool                        // Optional: Only for the keyless signing scenario
 }
 
 var TestScenarios = []TestScenarioSpec{
@@ -95,6 +96,25 @@ var TestScenarios = []TestScenarioSpec{
 		EnableHermetic:     false,
 		PrefetchInput:      "",
 		ManifestMediaType:  "docker",
+		ConformaPolicyExclusions: []string{"hermetic_task", "rpm_repos", "source_image", "cve",
+			"tasks.required_tasks_found:tpa-scan", "base_image_registries.base_image_permitted:quay.io/devfile/python",
+			"test.no_erred_tests:ecosystem-cert-preflight-checks", "test.no_failed_tests:ecosystem-cert-preflight-checks",
+			"test.no_skipped_tests:sast-snyk-check", "tasks.required_untrusted_task_found", "trusted_task.trusted",
+			"slsa_build_scripted_build.image_built_by_trusted_task"},
+	},
+	{
+		Name:               "keyless-signing",
+		Group:              "basic",
+		RepoName:           "devfile-sample-python-basic-clone",
+		Host:               "github.com",
+		Revision:           "47fc22092005aabebce233a9b6eab994a8152bbd",
+		ContextDir:         ".",
+		DockerFilePath:     constants.DockerFilePath,
+		PipelineBundleName: constants.DockerBuild,
+		EnableHermetic:     false,
+		PrefetchInput:      "",
+		ManifestMediaType:  "docker",
+		KeylessSigning:     true,
 		ConformaPolicyExclusions: []string{"hermetic_task", "rpm_repos", "source_image", "cve",
 			"tasks.required_tasks_found:tpa-scan", "base_image_registries.base_image_permitted:quay.io/devfile/python",
 			"test.no_erred_tests:ecosystem-cert-preflight-checks", "test.no_failed_tests:ecosystem-cert-preflight-checks",
